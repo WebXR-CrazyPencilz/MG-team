@@ -1171,6 +1171,10 @@ function buildProjectCard(p) {
             <div class="cp-metric-val" style="font-size:9px;">${esc(fmtCPDateShort(p.startDate))}</div>
           </div>
           <div class="cp-metric-box" style="min-width:60px;padding:3px 6px;">
+            <div class="cp-metric-label">Started By</div>
+            <div class="cp-metric-val" style="font-size:9px;">${esc(p.startedBy || '—')}</div>
+          </div>
+          <div class="cp-metric-box" style="min-width:60px;padding:3px 6px;">
             <div class="cp-metric-label">${esc(endOrStatusLabel)}</div>
             <div class="cp-metric-val" style="font-size:9px;">${esc(endOrStatusValue)}</div>
           </div>
@@ -1270,7 +1274,7 @@ async function openProjectDetail(content, projectId, opts = {}) {
 
   const isNew = !projectId;
   const project = isNew
-    ? { projectId: '', projectName: '', clientId: presetClientId, status: 'In Progress', startDate: '' }
+    ? { projectId: '', projectName: '', clientId: presetClientId, status: 'In Progress', startDate: '', startedBy: '' }
     : CP_PROJECTS.find(p => p.projectId === projectId);
 
   if (!isNew && !project) { toast?.('e', 'Project not found', projectId); return; }
@@ -1327,6 +1331,11 @@ async function openProjectDetail(content, projectId, opts = {}) {
         <div class="cp-form-field">
           <label class="cp-flabel">Start Date</label>
           <input class="cp-finput" id="cpStartDate" type="date" value="${isoDateOrBlank(project.startDate)}" ${canEdit ? '' : 'disabled'}/>
+        </div>
+
+        <div class="cp-form-field">
+          <label class="cp-flabel">Started By <span class="cp-hint">— view only</span></label>
+          <input class="cp-finput" value="${esc(project.startedBy || '—')}" disabled/>
         </div>
       </div>
 
