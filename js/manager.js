@@ -53,45 +53,55 @@ async function initManager() {
   </div>`;
 
   try {
-    // Load master data once. Only the employees portion is this
-    // file's concern — clients/projects are handed off wholesale to
-    // client-project.js, which owns everything about them.
-    // Reuses the master data auth.js ALREADY fetched once during
-    // login (LIVE_EMPLOYEES/CLIENTS/PROJECTS) instead of calling
-    // apiGetMasterData() again from scratch — same reasoning as
-    // teamleader.js's/humanresource.js's identical fix: one fewer
-    // redundant round-trip, one fewer chance to fail on a flaky
-    // connection. Falls back to a real fetch only if those globals
-    // are somehow still empty.
-    const master = (typeof LIVE_EMPLOYEES !== 'undefined' && LIVE_EMPLOYEES.length)
-      ? { employees: LIVE_EMPLOYEES, clients: (typeof CLIENTS !== 'undefined' ? CLIENTS : []), projects: (typeof PROJECTS !== 'undefined' ? PROJECTS : []) }
-      : await apiGetMasterData();
+    // Single bulk request (getTLData) instead of firing one parallel
+    // apiGetAllHistory call PER EMPLOYEE. The old N-parallel-requests
+    // pattern was the single biggest source of the concurrency burst
+    // causing widespread timeouts across the whole app — Manager
+    // Dashboard/Project tab ALSO fire getProjectMasterList/
+    // getClientMasterList/getHistoricalRecords/getHistoricalProjectsSummary
+    // at roughly the same moment, and all of those were queuing behind
+    // N separate per-employee requests competing for the same limited
+    // concurrency slots (see api.js's SHEET_MAX_CONCURRENT comment).
+    // getTLData() already exists in Code.gs and loops every employee's
+    // sheet server-side in ONE execution — teamleader.js has used this
+    // exact call for a while; Manager now gets the same benefit. This
+    // also returns employees/clients/projects in the same response, so
+    // the separate master-data fetch below only runs as a fallback if
+    // this call fails outright.
+    let master, entries, tlErrors = [];
+    try {
+      const tlData = await sheetGET({ action: 'getTLData' });
+      master  = { employees: tlData.employees || [], clients: tlData.clients || [], projects: tlData.projects || [] };
+      entries = Array.isArray(tlData.entries) ? tlData.entries : [];
+      tlErrors = Array.isArray(tlData.errors) ? tlData.errors : [];
+    } catch (bulkErr) {
+      // Bulk call itself failed outright (not a per-employee issue —
+      // Code.gs's getTLData catches those individually) — fall back to
+      // a master-data-only fetch with an empty timesheet, same as a
+      // fresh login with no history yet, rather than leaving the whole
+      // Dashboard unusable.
+      console.warn('[manager] getTLData failed, falling back to master data only:', bulkErr.message);
+      master = (typeof LIVE_EMPLOYEES !== 'undefined' && LIVE_EMPLOYEES.length)
+        ? { employees: LIVE_EMPLOYEES, clients: (typeof CLIENTS !== 'undefined' ? CLIENTS : []), projects: (typeof PROJECTS !== 'undefined' ? PROJECTS : []) }
+        : await apiGetMasterData();
+      entries = [];
+    }
+
     MGR_EMPLOYEES = master.employees || [];
 
     if (typeof ClientProjectAPI !== 'undefined' && typeof ClientProjectAPI.ingestMasterData === 'function') {
       ClientProjectAPI.ingestMasterData(master);
     }
 
-    // Each employee's history is fetched independently and tagged
-    // with whether it actually succeeded — NOT silently swallowed to
-    // an empty array on failure. See teamleader.js's identical fix
-    // for the full reasoning: a single flaky request out of up to 19
-    // firing in parallel used to make that employee's real timesheet
-    // data vanish everywhere with no warning at all — indistinguishable
-    // from them genuinely having no entries.
-    const results = await Promise.all(
-      MGR_EMPLOYEES.map(emp =>
-        apiGetAllHistory(emp.id)
-          .then(entries => ({ ok: true, empName: emp.name, entries: entries.map(e => ({ ...e, empId: emp.id, empName: emp.name, empTeam: emp.team })) }))
-          .catch(err => ({ ok: false, empName: emp.name, error: err.message, entries: [] }))
-      )
-    );
-    const failed = results.filter(r => !r.ok);
-    MGR_DATA = results.flatMap(r => r.entries);
-
-    if (failed.length) {
-      toast?.('e', `Couldn't load ${failed.length} employee${failed.length > 1 ? "s'" : "'s"} timesheet data`,
-        `${failed.map(f => f.empName).join(', ')} — their hours may show as missing below. Reload to retry.`, 12000);
+    // getTLData tags per-employee failures itself (empId/empName/message)
+    // when one employee's own sheet read fails inside that single
+    // execution — surfaced the same way the old per-employee .catch()
+    // used to, just sourced from one bulk response instead of N
+    // separate ones.
+    MGR_DATA = entries;
+    if (tlErrors.length) {
+      toast?.('e', `Couldn't load ${tlErrors.length} employee${tlErrors.length > 1 ? "s'" : "'s"} timesheet data`,
+        `${tlErrors.map(f => f.empName).join(', ')} — their hours may show as missing below. Reload to retry.`, 12000);
     }
 
     if (typeof ClientProjectAPI !== 'undefined' && typeof ClientProjectAPI.ingestTimesheetData === 'function') {

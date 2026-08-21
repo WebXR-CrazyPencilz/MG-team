@@ -495,10 +495,28 @@ async function renderClientTab(content) {
   }
   content.innerHTML = `<div class="mgr-loading"><div class="slot-spinner"></div><span>Loading clients…</span></div>`;
   try {
-    // Client cards need both clients (for the grid itself) and
-    // projects (for the "project count" / "active" badge on each
-    // card, and for the scoped grid on the Client Detail page).
-    await Promise.all([loadClientData(), loadProjectData(), loadHistoricalData()]);
+    // Same bundled request as renderProjectTab (see its comment) —
+    // this tab doesn't need historicalProjectsSummary, but fetching
+    // it alongside costs nothing extra since it's already one Sheet
+    // read inside the same execution.
+    let bundle;
+    try {
+      bundle = await sheetGET({ action: 'getProjectTabData', role: CP_ROLE });
+    } catch (bundleErr) {
+      console.warn('[client-project] getProjectTabData unavailable, falling back to individual calls:', bundleErr.message);
+    }
+
+    if (bundle) {
+      CP_CLIENTS = (bundle.clients || []).map((c, idx) => ({ ...c, entryIndex: idx }));
+      window.MGR_CLIENTS = CP_CLIENTS;
+      CP_PROJECTS = (bundle.projects || []).map((p, idx) => ({ ...p, entryIndex: idx }));
+      CP_HISTORICAL_DATA = bundle.historicalRecords || [];
+    } else {
+      // Client cards need both clients (for the grid itself) and
+      // projects (for the "project count" / "active" badge on each
+      // card, and for the scoped grid on the Client Detail page).
+      await Promise.all([loadClientData(), loadProjectData(), loadHistoricalData()]);
+    }
   } catch(err) {
     content.innerHTML = `<div class="slot-error">Failed to load clients: ${esc(err.message)}</div>`;
     return;
@@ -516,7 +534,29 @@ async function renderProjectTab(content) {
   }
   content.innerHTML = `<div class="mgr-loading"><div class="slot-spinner"></div><span>Loading projects…</span></div>`;
   try {
-    await Promise.all([loadClientData(), loadProjectData(), loadHistoricalData(), loadHistoricalProjectsSummary()]);
+    // Single bundled request (getProjectTabData) instead of four
+    // separate ones (getClientMasterList, getProjectMasterList,
+    // getHistoricalRecords, getHistoricalProjectsSummary) — same
+    // data, one Apps Script round-trip instead of four. Falls back to
+    // the old four-call path if the bundle endpoint isn't available
+    // (e.g. Code.gs hasn't been redeployed yet), so this can't break
+    // an already-working setup.
+    let bundle;
+    try {
+      bundle = await sheetGET({ action: 'getProjectTabData', role: CP_ROLE });
+    } catch (bundleErr) {
+      console.warn('[client-project] getProjectTabData unavailable, falling back to individual calls:', bundleErr.message);
+    }
+
+    if (bundle) {
+      CP_CLIENTS = (bundle.clients || []).map((c, idx) => ({ ...c, entryIndex: idx }));
+      window.MGR_CLIENTS = CP_CLIENTS;
+      CP_PROJECTS = (bundle.projects || []).map((p, idx) => ({ ...p, entryIndex: idx }));
+      CP_HISTORICAL_DATA = bundle.historicalRecords || [];
+      CP_HIST_PROJECTS_SUMMARY = bundle.historicalProjectsSummary || [];
+    } else {
+      await Promise.all([loadClientData(), loadProjectData(), loadHistoricalData(), loadHistoricalProjectsSummary()]);
+    }
   } catch(err) {
     content.innerHTML = `<div class="slot-error">Failed to load projects: ${esc(err.message)}</div>`;
     return;
