@@ -214,19 +214,17 @@ function dashStatsFor(bucket) {
 
 const DASH_KPI_CARDS = [
   // PLACEHOLDER DATA — projects don't have a category field (3D /
-  // Unreal Engine / Web) in CP_PROJECTS today. These three numbers
-  // are NOT computed from real data yet. Wire this to a real project
+  // Unreal Engine / Web) in CP_PROJECTS today. This number is NOT
+  // computed from real data yet. Wire this to a real project
   // category field once one exists, then replace this block with an
-  // actual CP_PROJECTS aggregation — do not treat these as real.
-  { label: 'Active Projects in 3D',           count: 24, deltaPct: 12, color: '#4f8ef7', bg: 'rgba(79,142,247,.12)', icon: '📦' },
-  { label: 'Active Projects in Unreal Engine', count: 16, deltaPct: 8,  color: '#7c5cfc', bg: 'rgba(124,92,252,.12)', icon: '🎮' },
-  { label: 'Active Projects in the Web',       count: 32, deltaPct: 15, color: '#34d399', bg: 'rgba(52,211,153,.12)', icon: '🌐' },
+  // actual CP_PROJECTS aggregation — do not treat it as real.
+  { label: 'Active Projects in 3D', count: 24, deltaPct: 12, color: '#4f8ef7', bg: 'rgba(79,142,247,.12)', icon: '📦' },
 ];
 
 function renderDashboardKpiRow(wrap) {
   if (!wrap) return;
   wrap.innerHTML = `
-    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:22px;">
+    <div style="display:grid;grid-template-columns:repeat(${DASH_KPI_CARDS.length}, 1fr);gap:22px;">
       ${DASH_KPI_CARDS.map(dashBuildKpiCard).join('')}
     </div>`;
 }

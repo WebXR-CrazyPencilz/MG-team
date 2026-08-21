@@ -176,22 +176,26 @@ function renderEmployeeDropdown() {
     try {
       // Manager login
       if (id === (CONFIG.MANAGER_ID || 'MGR')) {
-        if (pw !== CONFIG.MANAGER_PW) throw new Error('Wrong manager password.');
-        loginAsManager({ id: 'MGR', name: 'Manager', team: 'Management', role: 'manager' });
+        const acc = await apiRoleLogin(id, pw);
+        loginAsManager({ id: acc.id, name: acc.name, team: acc.team, role: acc.role });
         return;
       }
       // HR login
       if (id === (CONFIG.HR_ID || 'HR')) {
-        if (pw !== CONFIG.HR_PW) throw new Error('Wrong HR password.');
-        loginAsHR({ id: 'HR', name: 'HR', team: 'Human Resources', role: 'hr' });
+        const acc = await apiRoleLogin(id, pw);
+        loginAsHR({ id: acc.id, name: acc.name, team: acc.team, role: acc.role });
         return;
       }
       // Team Leader login — matched by whichever configured account
-      // this dropdown selection corresponds to.
+      // this dropdown selection corresponds to. The ID list still
+      // comes from CONFIG.TEAM_LEADERS (so the dropdown/quick-tabs
+      // know which IDs to show), but the actual password check now
+      // goes to the backend (Code.gs's ROLE_ACCOUNTS) — the pw/name
+      // fields in TEAM_LEADERS are no longer used for verification.
       const tlAccount = getTeamLeaderAccounts().find(t => t.id === id);
       if (tlAccount) {
-        if (pw !== tlAccount.pw) throw new Error('Wrong team leader password.');
-        loginAsTL({ id: tlAccount.id, name: tlAccount.name, team: 'All Teams', role: 'tl' });
+        const acc = await apiRoleLogin(id, pw);
+        loginAsTL({ id: acc.id, name: acc.name, team: acc.team, role: acc.role });
         return;
       }
       // Employee login
@@ -354,16 +358,14 @@ function logout() {
 // so it changes only their own row via the HR-independent
 // changeOwnPassword backend action. Manager/TL/HR accounts are
 // deliberately kept OUT of the backend/Sheet — their passwords stay
-// as plain constants in config.js only, since that's the security
-// choice for these roles (no admin secret ever touches the Sheet or
-// travels over the network to be changed remotely). That means this
-// modal can only ever work for a real Employee login (USER set via
-// loginAs, not loginAsManager/loginAsTL/loginAsHR) — for the other
-// three roles, changing the password means editing config.js by hand
-// and redeploying, same as changing SHEETS_URL.
+// as plain constants in config.js only. That means this modal can
+// only ever work for a real Employee login (USER set via loginAs,
+// not loginAsManager/loginAsTL/loginAsHR) — for the other three
+// roles, changing the password means editing config.js by hand and
+// redeploying, same as changing SHEETS_URL.
 function showChangePasswordModal() {
   if (!USER || MANAGER_MODE || TL_MODE || HR_MODE) {
-    toast('i', 'Not available for this account', 'Manager/TL/HR passwords are fixed in config.js — edit MANAGER_PW / HR_PW / TEAM_LEADERS there and redeploy to change them.', 7000);
+    toast('i', 'Not available for this account', 'Manager/TL/HR passwords are set in Code.gs\'s ROLE_ACCOUNTS — edit that and redeploy the Apps Script to change them.', 7000);
     return;
   }
 

@@ -231,6 +231,11 @@ async function apiLogin(employeeId, password) {
   return sheetGET({ action: 'login', uid: employeeId, pw: password });
 }
 
+// ── ROLE LOGIN (Manager / HR / Team Leader) ────────
+async function apiRoleLogin(id, password) {
+  return sheetGET({ action: 'roleLogin', uid: id, pw: password });
+}
+
 // ── GET DAY SLOTS ─────────────────────────────────
 async function apiGetDaySlots(uid, date) {
   if (CONFIG.DEMO_MODE) {
@@ -330,4 +335,3 @@ async function apiChangeOwnPassword(uid, oldPw, newPw) {
 async function apiLoadEntries(uid) {
   return apiGetHistory(uid);
 }
-console.log("[API.JS LOADED] apiChangeOwnPassword type:", typeof apiChangeOwnPassword);

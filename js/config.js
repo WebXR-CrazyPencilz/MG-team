@@ -4,7 +4,7 @@
 
 const CONFIG = {
   // 👉 PASTE YOUR NEW TEAM'S APPS SCRIPT /exec URL HERE
-  SHEETS_URL: 'https://script.google.com/macros/s/AKfycbwaG9zTtq_M_0x3bytAE1dizu0-R-_99lZI-B1_rO0C-pvmqrhvshbXwPRAistBMck/exec',
+  SHEETS_URL: 'https://script.google.com/macros/s/AKfycbzdoGcZbYHrpyUYL4NExLCvZsRiVfnnj8VxA0Rznc5jAseAghEHIhJGsbqYf36wEIdd/exec',
 
   DEMO_MODE: false,
 
@@ -13,25 +13,28 @@ const CONFIG = {
   LS_SESSION:'tt_sess',
   PAGE_SIZE: 20,
 
-  // ── Role credentials ──────────────────────────
-  // Update these for the new team before going live.
+  // ── Role IDs ───────────────────────────────────
+  // MANAGER_ID/HR_ID/TEAM_LEADERS' ids are still used here — they
+  // tell the login dropdown which IDs to list. But the PASSWORDS for
+  // these roles are no longer checked from this file: they live in
+  // Code.gs's ROLE_ACCOUNTS constant instead (never shipped to the
+  // browser, unlike this file). To change a Manager/HR/TL password,
+  // edit ROLE_ACCOUNTS in Code.gs and redeploy the Apps Script — do
+  // NOT edit a pw value here, it's ignored.
   MANAGER_ID: 'MGR',
-  MANAGER_PW: 'manager2026',
 
-  // Team Leader accounts — each is its own login ID/password/
-  // display name. Add, remove, or edit entries here directly
-  // (same pattern as MANAGER_ID/MANAGER_PW above — there's no
-  // sheet-backed account system for these roles, just constants here).
-  // Add or remove objects in this array to match however many Team
-  // Leaders the new team has.
+  // Team Leader accounts — only `id` and `name` are used now (name
+  // for display in the dropdown/portal header). `pw` is ignored;
+  // the real password check happens against Code.gs's ROLE_ACCOUNTS.
+  // Add or remove objects here to match however many Team Leaders
+  // the team has — but also add/remove the matching entry in
+  // Code.gs's ROLE_ACCOUNTS, or that ID's login will fail.
   TEAM_LEADERS: [
-    { id: 'TL1', pw: 'teamlead963', name: 'teamlead741' },
+    { id: 'TL1', name: 'Team Leader 1' },
   ],
 
-  // HR account — same pattern as MANAGER_ID/MANAGER_PW above (a
-  // single constant login, no sheet-backed account system).
+  // HR account — id only, see note above. pw ignored.
   HR_ID: 'HR',
-  HR_PW: 'hraccess2026',
 
   // ── App settings ──────────────────────────────
   CURRENCY:        '₹',
