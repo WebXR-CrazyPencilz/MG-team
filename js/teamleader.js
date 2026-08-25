@@ -122,10 +122,11 @@ function renderTLPortal() {
     <!-- Top nav tabs -->
     <div style="display:flex;gap:4px;margin-bottom:1.5rem;border-bottom:1px solid var(--border);padding-bottom:0;">
       ${[
-        { id:'project',    icon:'📁', label:'Projects & Clients' },
-        { id:'employees',  icon:'👥', label:'Employees'  },
-        { id:'attendance', icon:'🕒', label:'Attendance' },
-        { id:'historical', icon:'📜', label:'Historical Import' },
+        { id:'project',      icon:'📁', label:'Projects & Clients' },
+        { id:'employees',    icon:'👥', label:'Employees'  },
+        { id:'attendance',   icon:'🕒', label:'Attendance' },
+        { id:'historical',   icon:'📜', label:'Historical Import' },
+        { id:'mytimesheet',  icon:'📝', label:'My Timesheet' },
       ].map(t => `
         <button class="tl-tab${TL_TAB===t.id?' active':''}" data-tab="${t.id}" style="
           padding:8px 16px;border:none;background:none;cursor:pointer;
@@ -141,6 +142,14 @@ function renderTLPortal() {
 
   container.querySelectorAll('.tl-tab').forEach(btn => {
     btn.addEventListener('click', () => {
+      // "My Timesheet" is a navigation action, not a persistent tab —
+      // it hands off to the existing Employee Timesheet screen (same
+      // form.js/table.js/chart.js used by normal employees) instead
+      // of rendering inside tlTabContent, and it leaves TL_TAB/the
+      // other tab buttons' active state untouched so the Team Leader
+      // returns to whichever tab they were on before.
+      if (btn.dataset.tab === 'mytimesheet') { openTLOwnTimesheet(); return; }
+
       TL_TAB = btn.dataset.tab;
       container.querySelectorAll('.tl-tab').forEach(b => {
         const active = b === btn;
@@ -657,4 +666,75 @@ function tlToast(msg, isError=false) {
     box-shadow:0 4px 20px rgba(0,0,0,.4);white-space:nowrap;`;
   document.body.appendChild(t);
   setTimeout(()=>t.remove(),3000);
+}
+
+// ══════════════════════════════════════════════════
+// MY TIMESHEET — Team Leader's own regular Employee
+// Timesheet, reusing the existing employee form/table/
+// chart modules and existing save/API logic wholesale.
+// No separate implementation: this just shows the same
+// #app screen normal employees use, loaded for the
+// Team Leader's own USER.id (already set by loginAsTL),
+// then hands control back to the Team Leader Portal.
+// ══════════════════════════════════════════════════
+const TL_BACK_BTN_ID = 'tlBackToPortalBtn';
+
+async function openTLOwnTimesheet() {
+  const appEl = $('app');
+  const tlEl  = $('tlPortal');
+  if (!appEl) {
+    tlToast('Employee Timesheet screen is not available.', true);
+    return;
+  }
+
+  tlEl?.classList.remove('on');
+  appEl.classList.add('on');
+  ensureTLBackButton();
+
+  try {
+    // Same data load loginAs() does for a normal employee — keyed off
+    // USER.id, which is already the Team Leader's own id/name (set at
+    // loginAsTL), so entries save/load against the Team Leader exactly
+    // like any other employee, never against whichever employee the
+    // Team Leader was last viewing in the Employees tab.
+    ENTRIES = await apiLoadEntries(USER.id);
+    initForm();
+    refreshStats();
+    refreshFilters();
+    refreshTable();
+    refreshChart();
+  } catch(err) {
+    tlToast(`Could not load your timesheet: ${err.message}`, true);
+  }
+}
+
+function closeTLOwnTimesheet() {
+  const appEl = $('app');
+  const tlEl  = $('tlPortal');
+  appEl?.classList.remove('on');
+  tlEl?.classList.add('on');
+  $(TL_BACK_BTN_ID)?.remove();
+}
+
+// Small floating button so the Team Leader can get back to the Team
+// Leader Portal from their own timesheet screen — added once per
+// visit and removed again on the way back out.
+function ensureTLBackButton() {
+  if ($(TL_BACK_BTN_ID)) return;
+  const btn = document.createElement('button');
+  btn.id = TL_BACK_BTN_ID;
+  btn.textContent = '← Back to Team Leader Portal';
+  btn.className = 'btn bghost';
+  // Fixed top-RIGHT (not top-left) so it never overlaps the app's own
+  // header — the logo + avatar cluster in #app already occupies the
+  // top-left corner. Solid background/shadow of its own so it reads
+  // clearly regardless of whatever's under it.
+  btn.style.cssText = `
+    position:fixed; top:14px; right:14px; z-index:9999;
+    background:var(--surface1,#fff); border:1px solid var(--border-md,#d1d5db);
+    border-radius:8px; padding:8px 14px; font-size:13px; font-weight:600;
+    box-shadow:0 4px 14px rgba(0,0,0,.12); cursor:pointer;
+  `;
+  btn.onclick = closeTLOwnTimesheet;
+  document.body.appendChild(btn);
 }

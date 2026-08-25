@@ -4,7 +4,7 @@
 
 const CONFIG = {
   // 👉 PASTE YOUR NEW TEAM'S APPS SCRIPT /exec URL HERE
-  SHEETS_URL: 'https://script.google.com/macros/s/AKfycbxAG5bcQPgUdLtYI1bdVAMv9c5HLJH4ndxOP6-gYtkq4oYmr4N5RTBVoil4jYikWOf3/exec',
+  SHEETS_URL: 'https://script.google.com/macros/s/AKfycbx6Vop_nqdvTX58NB0dCREVFEB-oSpWQdtgWXJRh_E2BVOcCyoL3-VXrv_YgdtTcaeZ/exec',
 
   DEMO_MODE: false,
 
