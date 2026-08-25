@@ -382,12 +382,12 @@ function renderEntryRow(slotKey, entryNum, entry) {
 
     <!-- Notes -->
     <div class="fg" style="margin-top:.6rem">
-      <label class="flabel">Notes <span class="req">*</span></label>
+      <label class="flabel">Notes <span style="color:var(--txt2);font-weight:400;">(optional)</span></label>
       <textarea class="fc ta" id="notes-${id}" rows="2"
-        placeholder="What did you work on? (min ${MIN_NOTES_LENGTH} characters)" maxlength="300"
+        placeholder="What did you work on?" maxlength="300"
         oninput="updateNotesCount('${id}')">${notes}</textarea>
       <div class="tafoot">
-        <span class="cc" id="cc-${id}">${notes.length >= MIN_NOTES_LENGTH ? `${notes.length}/300` : `${notes.length}/${MIN_NOTES_LENGTH} minimum`}</span>
+        <span class="cc" id="cc-${id}">${notes.length}/300</span>
       </div>
     </div>
 
@@ -569,17 +569,13 @@ function calcHours(id) {
 }
 
 // ── NOTES CHARACTER COUNT ─────────────────────────
-const MIN_NOTES_LENGTH = 25;
-
 function updateNotesCount(id) {
   const ta  = $(`notes-${id}`);
   const cc  = $(`cc-${id}`);
   if (!ta || !cc) return;
   const len = ta.value.trim().length;
-  cc.textContent = len >= MIN_NOTES_LENGTH
-    ? `${len}/300`
-    : `${len}/${MIN_NOTES_LENGTH} minimum`;
-  cc.style.color = len >= MIN_NOTES_LENGTH ? 'var(--ok)' : 'var(--err)';
+  cc.textContent = `${len}/300`;
+  cc.style.color = 'var(--txt2)';
   ta.classList.toggle('bad', false); // clear red border while typing
 }
 
@@ -754,17 +750,6 @@ async function saveEntry(id, slotKey, entryNum) {
     return;
   }
   tin.classList.remove('bad'); tout.classList.remove('bad');
-
-  // ── NOTES MIN LENGTH VALIDATION ────────────────────────────
-  const notesEl  = $(`notes-${id}`);
-  const notesVal = notesEl?.value.trim() || '';
-  if (notesVal.length < MIN_NOTES_LENGTH) {
-    toast('e', 'Notes too short', `Write at least ${MIN_NOTES_LENGTH} characters (currently ${notesVal.length})`);
-    notesEl?.classList.add('bad');
-    notesEl?.focus();
-    return;
-  }
-  notesEl.classList.remove('bad');
 
   const slotEntries = DAY_ENTRIES[slotKey] || [];
   const isExisting  = slotEntries.some(e => e.entryNum === entryNum);
