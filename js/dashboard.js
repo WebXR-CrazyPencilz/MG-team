@@ -54,13 +54,23 @@ function ensureDashStyles() {
   document.head.appendChild(style);
 }
 
-// ── ENTRY POINT (called by manager.js when MGR_TAB === 'dashboard') ──
+// ── ENTRY POINT (called by manager.js when MGR_TAB === 'dashboard',
+//    and by humanresource.js when HR_TAB === 'dashboard') ──
 async function renderManagerDashboard(content) {
   DASH_CONTAINER = content;
   ensureDashStyles();
 
-  if (typeof MANAGER_MODE !== 'undefined' && !MANAGER_MODE) {
-    content.innerHTML = `<div class="chart-empty">The Dashboard is only available to the Manager.</div>`;
+  // Manager and HR both get the full Dashboard experience — every
+  // number/widget inside this file already comes from CP_TIMESHEET_DATA/
+  // CP_EMPLOYEES/CP_PROJECTS/CP_HISTORICAL_DATA (read-only aggregates,
+  // no financial figures), so there's nothing here for HR to see that
+  // isn't already safe for HR. Manager-only actions (Salary, Project
+  // Timeline) live in their own separate tabs/files and are untouched —
+  // this gate only controls who can open the Dashboard tab itself.
+  const isManager = typeof MANAGER_MODE !== 'undefined' && MANAGER_MODE;
+  const isHR      = typeof HR_MODE      !== 'undefined' && HR_MODE;
+  if (!isManager && !isHR) {
+    content.innerHTML = `<div class="chart-empty">The Dashboard is only available to the Manager or HR.</div>`;
     return;
   }
 
@@ -75,7 +85,11 @@ async function renderManagerDashboard(content) {
     if (typeof loadProjectData === 'function')    await loadProjectData();
     if (typeof loadClientData === 'function')      await loadClientData();
     if (typeof loadHistoricalData === 'function')  await loadHistoricalData();
-    if (typeof ensureSalaryDataLoaded === 'function') await ensureSalaryDataLoaded();
+    // Salary data (and the Clients Overview widget below, which is
+    // built from it via calculateProjectCost — Project Constant /
+    // Employee Points spent) is Manager-only financial information.
+    // HR gets the same Dashboard shell but never loads or renders it.
+    if (isManager && typeof ensureSalaryDataLoaded === 'function') await ensureSalaryDataLoaded();
 
     // Total Views (shown on each candle) reuses gantt.js's own
     // per-project monthly aggregation and Views Delivered formula
@@ -112,13 +126,16 @@ async function renderManagerDashboard(content) {
     <div id="dashKpiWrap" style="margin-bottom:22px;"></div>
     <div style="display:flex;gap:10px;align-items:stretch;">
       <div style="flex:0 0 330px;" id="dashNotLoggedWrap"></div>
-      <div style="flex:0 0 600px;" id="dashTeamPerfWrap"></div>
-      <div style="flex:1;min-width:280px;" id="dashClientRollupWrap"></div>
+      <div style="flex:${isManager ? '0 0 600px' : '1'};min-width:280px;" id="dashTeamPerfWrap"></div>
+      ${isManager ? `<div style="flex:1;min-width:280px;" id="dashClientRollupWrap"></div>` : ''}
     </div>`;
   renderDashboardKpiRow($('dashKpiWrap'));
   renderDashboardNotLoggedPanel($('dashNotLoggedWrap'));
   renderDashboardShell($('dashTeamPerfWrap'));
-  renderDashboardClientRollup($('dashClientRollupWrap'));
+  // Clients Overview (Project Constant / Employee Points spent) is
+  // Manager-only financial information — HR gets the rest of the
+  // Dashboard identically, just without this one widget.
+  if (isManager) renderDashboardClientRollup($('dashClientRollupWrap'));
 }
 
 function buildTeamPerformanceCache(force = false) {
@@ -644,11 +661,10 @@ function renderDashboardClientRollup(wrap) {
 }
 
 // Jumps to the Projects & Clients tab with a given client pre-selected.
-// This widget currently only renders on the Manager Dashboard (Team
-// Leader has no Dashboard tab), so only the Manager branch is live —
-// the TL branch is kept so this keeps working unchanged if a Team
-// Leader Dashboard is ever added, since both shells already share the
-// same MGR_TAB/renderMgrTab vs TL_TAB/renderTLTab pattern.
+// Renders on the Manager Dashboard and — since HR now reuses this same
+// Dashboard module for HR_TAB === 'dashboard' (see the entry-point gate
+// above) — on the HR Dashboard too, so this needs its own HR_MODE
+// branch alongside Manager's, the same pattern as Team Leader's below.
 function goToClientInProjectsTab(clientId) {
   CP_PC_CLIENT     = clientId || '';
   CP_PC_PROJECT_ID = '';
@@ -662,6 +678,15 @@ function goToClientInProjectsTab(clientId) {
       b.style.borderBottom = active ? '2px solid var(--a1)' : '2px solid transparent';
     });
     if (typeof renderMgrTab === 'function') renderMgrTab();
+  } else if (typeof HR_MODE !== 'undefined' && HR_MODE && typeof HR_TAB !== 'undefined') {
+    HR_TAB = 'project';
+    const container = $('hrApp');
+    container?.querySelectorAll('.hr-tab').forEach(b => {
+      const active = b.dataset.tab === 'project';
+      b.style.color        = active ? 'var(--a1)' : 'var(--txt2)';
+      b.style.borderBottom = active ? '2px solid var(--a1)' : '2px solid transparent';
+    });
+    if (typeof renderHRTab === 'function') renderHRTab();
   } else if (typeof TL_MODE !== 'undefined' && TL_MODE && typeof TL_TAB !== 'undefined') {
     TL_TAB = 'project';
     const container = $('tlApp');

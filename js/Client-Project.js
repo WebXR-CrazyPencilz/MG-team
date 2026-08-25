@@ -522,7 +522,17 @@ async function renderClientTab(content) {
     return;
   }
 
-  renderClientCards(content);
+  // Rendering itself is now guarded too — previously an exception
+  // thrown while building the cards (e.g. a bad record shape) left
+  // the loading spinner's markup silently replaced by nothing
+  // visible, with the only trace being a console error. Now any
+  // render-time failure surfaces the same way a load-time failure
+  // already did, instead of a page that just looks blank.
+  try {
+    renderClientCards(content);
+  } catch (err) {
+    content.innerHTML = `<div class="slot-error">Failed to display clients: ${esc(err.message)}</div>`;
+  }
 }
 
 async function renderProjectTab(content) {
@@ -561,7 +571,11 @@ async function renderProjectTab(content) {
     content.innerHTML = `<div class="slot-error">Failed to load projects: ${esc(err.message)}</div>`;
     return;
   }
-  renderProjectList(content);
+  try {
+    renderProjectList(content);
+  } catch (err) {
+    content.innerHTML = `<div class="slot-error">Failed to display projects: ${esc(err.message)}</div>`;
+  }
 }
 
 // Refreshes ONLY this tab's data (Clients/Projects/Historical) and
@@ -595,7 +609,11 @@ async function refreshProjectTab(content) {
   } catch (err) {
     toast?.('e', 'Refresh failed', err.message);
   }
-  renderProjectList(content);
+  try {
+    renderProjectList(content);
+  } catch (err) {
+    content.innerHTML = `<div class="slot-error">Failed to display projects: ${esc(err.message)}</div>`;
+  }
 }
 
 async function loadClientData() {
