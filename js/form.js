@@ -39,7 +39,7 @@ const SLOT_META = {
   // defaultIn/defaultOut are UNCHANGED, so a new entry still shows
   // 13:45 - 19:30 (7:30 PM) by default; the later range is only used
   // if someone actually picks a later Time Out.
-  afternoon: { label: 'Afternoon', icon: '☀️',  defaultIn: '13:45', defaultOut: '19:30', minTime: '13:30', maxTime: '23:59', displayMin: '13:45', color: '#3b82f6' },
+  afternoon: { label: 'Afternoon', icon: '☀️',  defaultIn: '13:00', defaultOut: '19:30', minTime: '13:00', maxTime: '23:59', displayMin: '13:00', color: '#3b82f6' },
 };
 
 // ── INIT ──────────────────────────────────────────
@@ -172,7 +172,6 @@ function renderSlots() {
   container.innerHTML = `
     ${renderRecentProjectsSlider()}
     ${renderSlotBlock('morning')}
-    ${renderLunchBlock()}
     ${renderSlotBlock('afternoon')}
   `;
 }
@@ -273,14 +272,14 @@ function renderEntryRow(slotKey, entryNum, entry) {
 
   const projectOptions = clientId
     ? PROJECTS.filter(p => p.cid === clientId).map(p =>
-        `<option value="${p.id}" data-n="${p.name}"${p.id === projectId ? ' selected' : ''}>${p.name}</option>`
+        `<option value="${p.id}" data-n="${p.name}"${p.id === projectId ? ' selected' : ''}>${p.id}</option>`
       ).join('')
     : '';
 
   const subtaskId = entry?.subtaskId || '';
   const subtaskOptions = projectId
     ? SUBTASKS.filter(s => s.pid === projectId).map(s =>
-        `<option value="${s.id}" data-n="${s.name}"${s.id === subtaskId ? ' selected' : ''}>${s.name}</option>`
+        `<option value="${s.id}" data-n="${s.name}"${s.id === subtaskId ? ' selected' : ''}>${s.id}</option>`
       ).join('')
     : '';
 
@@ -343,6 +342,7 @@ function renderEntryRow(slotKey, entryNum, entry) {
           </select>
           <svg class="sarr" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
         </div>
+        <div class="client-name-display" id="cname-${id}" style="font-size:11px;color:var(--txt2);margin-top:3px;min-height:14px;">${clientId ? esc((CLIENTS.find(c => c.id === clientId) || {}).name || '') : ''}</div>
       </div>
       <div class="fg">
         <label class="flabel">Project <span class="req">*</span></label>
@@ -353,23 +353,25 @@ function renderEntryRow(slotKey, entryNum, entry) {
           </select>
           <svg class="sarr" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
         </div>
+        <div class="project-name-display" id="pname-${id}" style="font-size:11px;color:var(--txt2);margin-top:3px;min-height:14px;">${projectId ? `Project Name: ${esc((PROJECTS.find(p => p.id === projectId) || {}).name || '')}` : ''}</div>
       </div>
       <div class="fg">
         <label class="flabel">Subtask <span style="color:var(--txt2);font-weight:400;">(optional)</span></label>
         <div class="swrap">
-          <select class="fc subtask-sel" id="ssel-${id}" ${projectId ? '' : 'disabled'}>
+          <select class="fc subtask-sel" id="ssel-${id}" ${projectId ? '' : 'disabled'} onchange="onSubtaskChange('${id}')">
             <option value="">— ${projectId ? 'Subtask' : 'Select project first'} —</option>
             ${subtaskOptions}
           </select>
           <svg class="sarr" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
         </div>
+        <div class="subtask-name-display" id="sname-${id}" style="font-size:11px;color:var(--txt2);margin-top:3px;min-height:14px;">${subtaskId ? `Subtask Name: ${esc((SUBTASKS.find(s => s.id === subtaskId) || {}).name || '')}` : ''}</div>
       </div>
       <div class="fg">
         <label class="flabel">Task <span class="req">*</span></label>
         <div class="swrap">
           <select class="fc" id="tsel-${id}">
             <option value="">— Task —</option>
-            ${['Modelling & Texturing','lighting & Rendering', 'Web Development','2D FloorPlan', 'Editing & Grading', 'Unreal App Development', 'Training R&D' ].map(t =>
+            ${['Planning', 'Designing - Generation', 'Animation', 'Video - Generation', '3D Modelling & Texturing', 'Video - Generation', 'Designing - Editing', '3D Lighting ', '3D Animation', 'Rendering', 'Sound Mixing'].map(t =>
               `<option${t === task ? ' selected' : ''}>${t}</option>`
             ).join('')}
           </select>
@@ -407,15 +409,35 @@ function renderEntryRow(slotKey, entryNum, entry) {
   </div>`;
 }
 
-// ── LUNCH BLOCK ───────────────────────────────────
-function renderLunchBlock() {
-  return `
-  <div class="lunch-block">
-    <span>🍽️</span>
-    <span class="lunch-label">Lunch Break</span>
-    <span class="lunch-time">1:00 PM – 1:45 PM</span>
-    <span class="lunch-badge">45 min</span>
-  </div>`;
+// Returns the Time Out that a newly-added entry should continue from,
+// or '' if there's nothing valid to continue from (new entry then
+// keeps its normal/default Time In). For entryNum > 1 this is the
+// previous entry in the SAME slot; for a slot's first entry (only
+// relevant for Afternoon), it's the last Morning entry's Time Out —
+// never a hardcoded lunch time, since the lunch break no longer exists.
+const isValidTimeStr = v => /^\d{1,2}:\d{2}$/.test(v || '');
+
+function getContinuationTimeIn(slotKey, newNum) {
+  if (newNum > 1) {
+    const prevTout = $(`tout-${slotKey}-${newNum - 1}`)?.value || '';
+    return isValidTimeStr(prevTout) ? prevTout : '';
+  }
+  if (slotKey === 'afternoon') {
+    const morningRows = document.querySelectorAll('#entries-morning .entry-row');
+    if (!morningRows.length) return '';
+    const lastNum   = morningRows[morningRows.length - 1].dataset.num;
+    const lastTout  = $(`tout-morning-${lastNum}`)?.value || '';
+    if (!isValidTimeStr(lastTout)) return '';
+    // Only continue with it if it actually falls within the
+    // Afternoon slot's allowed range — otherwise fall back to the
+    // slot's normal default Time In rather than guessing.
+    const toMin = t => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
+    const meta  = SLOT_META.afternoon;
+    const outM  = toMin(lastTout);
+    if (outM < toMin(meta.displayMin) || outM > toMin(meta.maxTime)) return '';
+    return lastTout;
+  }
+  return '';
 }
 
 // ── ADD / REMOVE ENTRY ROW ────────────────────────
@@ -430,11 +452,22 @@ function addEntry(slotKey) {
   const maxInDOM   = Math.max(maxSaved, domRows.length);
   const newNum     = maxInDOM + 1;
 
+  const continuationTimeIn = getContinuationTimeIn(slotKey, newNum);
+
   const container = $(`entries-${slotKey}`);
   if (!container) return;
   const div = document.createElement('div');
   div.innerHTML = renderEntryRow(slotKey, newNum, null);
   container.appendChild(div.firstElementChild);
+
+  if (continuationTimeIn) {
+    const newId = `${slotKey}-${newNum}`;
+    const tinEl = $(`tin-${newId}`);
+    if (tinEl) {
+      tinEl.value = continuationTimeIn;
+      calcHours(newId);
+    }
+  }
 
   const addBtn = document.querySelector(`#slot-${slotKey} .add-entry-btn`);
   if (addBtn && (current.length + 1) >= MAX_ENTRIES_PER_SLOT) addBtn.style.display = 'none';
@@ -454,11 +487,18 @@ function onClientChange(id) {
   const psel = $(`psel-${id}`);
   if (!csel || !psel) return;
   const cid = csel.value;
+
+  const cnameEl = $(`cname-${id}`);
+  if (cnameEl) {
+    const client = CLIENTS.find(c => c.id === cid);
+    cnameEl.textContent = client ? client.name : '';
+  }
+
   psel.innerHTML = '<option value="">— Project —</option>';
   if (cid) {
     PROJECTS.filter(p => p.cid === cid).forEach(p => {
       const o = document.createElement('option');
-      o.value = p.id; o.textContent = p.name; o.dataset.n = p.name;
+      o.value = p.id; o.textContent = p.id; o.dataset.n = p.name;
       psel.appendChild(o);
     });
     psel.disabled = false;
@@ -477,17 +517,39 @@ function onProjectChange(id) {
   const ssel = $(`ssel-${id}`);
   if (!ssel) return;
   const pid = psel?.value || '';
+
+  const pnameEl = $(`pname-${id}`);
+  if (pnameEl) {
+    const project = PROJECTS.find(p => p.id === pid);
+    pnameEl.textContent = project ? `Project Name: ${project.name}` : '';
+  }
+
   ssel.innerHTML = '<option value="">— Subtask —</option>';
   if (pid) {
     SUBTASKS.filter(s => s.pid === pid).forEach(s => {
       const o = document.createElement('option');
-      o.value = s.id; o.textContent = s.name; o.dataset.n = s.name;
+      o.value = s.id; o.textContent = s.id; o.dataset.n = s.name;
       ssel.appendChild(o);
     });
     ssel.disabled = false;
   } else {
     ssel.disabled = true;
   }
+  // Reprocessing the subtask list invalidates whatever name was
+  // shown for the previously selected subtask — clear it, same as
+  // the dropdown itself being reset above.
+  const snameEl = $(`sname-${id}`);
+  if (snameEl) snameEl.textContent = '';
+}
+
+// ── SUBTASK NAME READ-ONLY DISPLAY ────────────────
+function onSubtaskChange(id) {
+  const ssel = $(`ssel-${id}`);
+  const snameEl = $(`sname-${id}`);
+  if (!ssel || !snameEl) return;
+  const sid = ssel.value;
+  const subtask = SUBTASKS.find(s => s.id === sid);
+  snameEl.textContent = subtask ? `Subtask Name: ${subtask.name}` : '';
 }
 
 // ── HOURS AUTO-CALC ───────────────────────────────

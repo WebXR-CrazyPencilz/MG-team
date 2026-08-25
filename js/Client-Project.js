@@ -564,6 +564,40 @@ async function renderProjectTab(content) {
   renderProjectList(content);
 }
 
+// Refreshes ONLY this tab's data (Clients/Projects/Historical) and
+// re-renders in place — used by the 🔄 button in the tab header.
+// Deliberately does NOT touch MGR_DATA/CP_TIMESHEET_DATA (that's
+// manager.js's/teamleader.js's own concern, refreshed by their own
+// portal-level reload) and does NOT reset CP_PC_CLIENT/CP_PC_PROJECT_ID,
+// so a refresh while a client/project is selected keeps that
+// selection instead of bouncing back to the top-level grid.
+async function refreshProjectTab(content) {
+  const btn = $('cpRefreshBtn');
+  if (btn) { btn.disabled = true; btn.style.opacity = '.5'; }
+  try {
+    let bundle;
+    try {
+      bundle = await sheetGET({ action: 'getProjectTabData', role: CP_ROLE });
+    } catch (bundleErr) {
+      console.warn('[client-project] getProjectTabData unavailable, falling back to individual calls:', bundleErr.message);
+    }
+
+    if (bundle) {
+      CP_CLIENTS = (bundle.clients || []).map((c, idx) => ({ ...c, entryIndex: idx }));
+      window.MGR_CLIENTS = CP_CLIENTS;
+      CP_PROJECTS = (bundle.projects || []).map((p, idx) => ({ ...p, entryIndex: idx }));
+      CP_HISTORICAL_DATA = bundle.historicalRecords || [];
+      CP_HIST_PROJECTS_SUMMARY = bundle.historicalProjectsSummary || [];
+    } else {
+      await Promise.all([loadClientData(), loadProjectData(), loadHistoricalData(), loadHistoricalProjectsSummary()]);
+    }
+    toast?.('s', 'Refreshed', 'Projects & Clients data is up to date.');
+  } catch (err) {
+    toast?.('e', 'Refresh failed', err.message);
+  }
+  renderProjectList(content);
+}
+
 async function loadClientData() {
   // getClientMasterList returns rows in sheet order (top to bottom),
   // and Code.gs's createClientMaster always appendRow()s new clients
@@ -946,6 +980,9 @@ function renderProjectList(content) {
         <div class="cp-tab-sub">Projects received from clients — status and view progress. Not a task board.</div>
       </div>
       <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+        <button id="cpRefreshBtn" title="Refresh this tab's data" style="background:var(--elevated);
+          border:1px solid var(--border-md);border-radius:6px;color:var(--txt2);cursor:pointer;
+          padding:7px 10px;font-size:13px;line-height:1;display:flex;align-items:center;">🔄</button>
         <input id="cpProjectSearch" type="text" placeholder="🔍 Search projects…" style="background:var(--surface2);
           border:1px solid var(--border);border-radius:6px;color:var(--txt1);font-size:12.5px;padding:7px 10px;width:180px;"/>
         <select id="cpProjectSort" style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;
@@ -977,6 +1014,7 @@ function renderProjectList(content) {
     openClientEditor(content, null, () => renderProjectList(content)));
   $('cpNewProjectBtn')?.addEventListener('click', () =>
     openProjectDetail(content, null, { presetClientId: CP_PC_CLIENT, onBack: () => renderProjectList(content) }));
+  $('cpRefreshBtn')?.addEventListener('click', () => refreshProjectTab(content));
   $('cpProjectSort')?.addEventListener('change', e => {
     CP_PROJECT_SORT = e.target.value;
     renderProjectList(content);
