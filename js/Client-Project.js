@@ -763,10 +763,14 @@ function buildClientCandleChart(client, projects) {
   });
 
   const maxHours = Math.max(...perProject.map(x => x.totalHours), 0.01);
+  const isManager = CP_ROLE === 'manager';
+  const maxConstant = isManager
+    ? Math.max(...perProject.map(x => parseFloat(x.project.projectConstant) || 0), 0.01)
+    : 0;
 
   const rows = perProject.map(({ project: p, totals, totalHours }, i) => {
     const isLast = i === perProject.length - 1;
-    return buildProjectPerfRow(p, totals, totalHours, maxHours, isLast);
+    return buildProjectPerfRow(p, totals, totalHours, maxHours, isLast, isManager, maxConstant);
   }).join('');
 
   return `<div>${rows}</div>`;
@@ -778,7 +782,7 @@ function buildClientCandleChart(client, projects) {
 // this client's highest Constant) — Manager only sees the Constant
 // bar and the Value/Profit line beneath it, same permission boundary
 // as before.
-function buildProjectPerfRow(project, totals, totalHours, maxHours, isLast) {
+function buildProjectPerfRow(project, totals, totalHours, maxHours, isLast, isManager, maxConstant) {
   const hasHours = totalHours > 0;
   const timeFillPct = hasHours ? Math.max((totalHours / maxHours) * 100, 3) : 100;
   const timeSegments = hasHours
@@ -788,6 +792,19 @@ function buildProjectPerfRow(project, totals, totalHours, maxHours, isLast) {
           title="${esc(t.name)}: ${fmtHM(t.hours)}"></div>`;
       }).join('')
     : `<div style="width:100%;height:100%;background:var(--border-md);" title="No hours logged yet"></div>`;
+
+  // Constant bar — Manager only, same boundary as everywhere else
+  // Project Constant appears. Length relative to this client's own
+  // highest Constant, same pattern as the Time bar above it.
+  const constantVal = parseFloat(project.projectConstant) || 0;
+  const constantRow = isManager ? `
+      <div style="display:flex;align-items:center;gap:10px;margin-top:4px;">
+        <span style="flex:0 0 62px;font-size:9.5px;color:var(--txt2);text-transform:uppercase;letter-spacing:.3px;">Constant</span>
+        <div style="flex:1;height:12px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;overflow:hidden;">
+          <div style="width:${Math.max((constantVal / maxConstant) * 100, constantVal > 0 ? 3 : 0)}%;height:100%;background:var(--a1);"></div>
+        </div>
+        <span style="flex:0 0 74px;text-align:right;font-size:10px;color:var(--txt1);font-weight:700;white-space:nowrap;">${esc(fmtCPConstant(constantVal))}</span>
+      </div>` : '';
 
   return `
     <div style="${isLast ? '' : 'margin-bottom:14px;padding-bottom:14px;border-bottom:1px solid var(--border);'}">
@@ -800,7 +817,7 @@ function buildProjectPerfRow(project, totals, totalHours, maxHours, isLast) {
           <div style="width:${timeFillPct}%;height:100%;display:flex;">${timeSegments}</div>
         </div>
         <span style="flex:0 0 74px;text-align:right;font-size:10px;color:var(--txt1);font-weight:700;white-space:nowrap;">${fmtHM(totalHours)}</span>
-      </div>
+      </div>${constantRow}
     </div>`;
 }
 
@@ -1393,6 +1410,13 @@ async function openProjectDetail(content, projectId, opts = {}) {
           <label class="cp-flabel">Started By <span class="cp-hint">— view only</span></label>
           <input class="cp-finput" value="${esc(project.startedBy || '—')}" disabled/>
         </div>
+
+        ${isManager ? `
+        <div class="cp-form-field">
+          <label class="cp-flabel">Project Constant</label>
+          <input class="cp-finput" id="cpConstant" type="number" step="any" min="0"
+            value="${project.projectConstant !== undefined && project.projectConstant !== '' ? esc(String(project.projectConstant)) : '0'}"/>
+        </div>` : ''}
       </div>
 
       <div style="display:flex;gap:8px;justify-content:space-between;align-items:center;margin-top:.4rem;">
@@ -1599,6 +1623,12 @@ async function saveProjectFromForm(content, isNew, originalProject, onDone) {
   payload.clientId    = clientId;
   payload.status       = $('cpStatus').value;
   payload.startDate    = $('cpStartDate').value;
+  // Project Constant — only present in the form (and thus in this
+  // payload) for the Manager role; the backend also independently
+  // ignores it from anyone else, so this is belt-and-suspenders, not
+  // the only enforcement.
+  const constantEl = $('cpConstant');
+  if (constantEl) payload.projectConstant = parseFloat(constantEl.value) || 0;
   if (!isNew) payload.originalProjectId = originalProject.projectId;
 
   btn.disabled = true; btn.textContent = 'Saving…';
@@ -1707,6 +1737,14 @@ function fmtHM(hours) {
   if (h === 0) return `${m}m`;
   if (m === 0) return `${h}h`;
   return `${h}h ${m}m`;
+}
+
+// Project Constant → compact display (e.g. "1,250"). Plain number
+// formatting, not currency — Constant isn't necessarily a rupee
+// figure, just a project-level numeric weight the Manager assigns.
+function fmtCPConstant(n) {
+  const v = parseFloat(n) || 0;
+  return v.toLocaleString('en-IN', { maximumFractionDigits: 2 });
 }
 
 // A stacked segmented bar — one colored segment per employee, width

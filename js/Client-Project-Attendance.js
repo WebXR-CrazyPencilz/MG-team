@@ -98,6 +98,9 @@ function renderAttendanceTab(content) {
           border-radius:6px;padding:6px 14px;font-size:12px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:6px;">
           ⬇ Export PDF
         </button>
+        <button id="attendRefreshBtn" title="Refresh this tab's data" style="background:var(--elevated);
+          border:1px solid var(--border-md);border-radius:6px;color:var(--txt2);cursor:pointer;
+          padding:7px 10px;font-size:13px;line-height:1;display:flex;align-items:center;">🔄</button>
         ${getCPRole() === 'hr' ? `
         <button id="attendPushHoliday" style="background:#fbbf24;color:#1a1a2e;border:none;
           border-radius:6px;padding:6px 14px;font-size:12px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:6px;">
@@ -150,6 +153,22 @@ function renderAttendanceTab(content) {
 
   $('attendExportPdf').addEventListener('click', () => exportAttendanceToPDF());
   $('attendPushHoliday')?.addEventListener('click', () => openBulkHolidayModal());
+  $('attendRefreshBtn').addEventListener('click', async () => {
+    const btn = $('attendRefreshBtn');
+    btn.disabled = true; btn.style.opacity = '.5';
+    try {
+      // Same underlying reload Client-Project.js's own auto-refresh
+      // uses (one bulk request for TL, per-employee for Manager/HR) —
+      // no second data-fetching implementation for this tab.
+      if (typeof refreshCPTimesheetData === 'function') await refreshCPTimesheetData();
+      toast?.('s', 'Refreshed', 'Attendance data is up to date.');
+    } catch (err) {
+      toast?.('e', 'Refresh failed', err.message);
+    }
+    renderAttendanceGrid();
+    const freshBtn = $('attendRefreshBtn');
+    if (freshBtn) { freshBtn.disabled = false; freshBtn.style.opacity = ''; }
+  });
 
   renderAttendanceGrid();
 }
