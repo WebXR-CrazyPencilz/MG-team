@@ -24,10 +24,26 @@
 // ═══════════════════════════════════════════════════
 
 let MYPROJ_MASTER_CACHE = null;
+let NEWPROJ_SUBMITTING  = false;
 
 function initMyProjectsTab() {
   const tabsBar = document.getElementById('empTabs');
   if (!tabsBar) return;
+
+  // Adds the "New Project" button + panel into the DOM the first time
+  // this runs (index.html itself isn't touched) — a no-op on every
+  // later call, so this stays safe to call from here every load.
+  ensureNewProjectTab(tabsBar);
+
+  // One map instead of one hardcoded if-branch per tab — this is what
+  // let the 4th tab slot in by adding an entry here instead of a
+  // second, parallel tab-switching implementation.
+  const PANEL_BY_TAB = {
+    timesheet:  'empTabTimesheet',
+    projects:   'empTabProjects',
+    attendance: 'empTabAttendance',
+    newproject: 'empTabNewProject',
+  };
 
   tabsBar.querySelectorAll('.emp-tab-btn').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -39,17 +55,174 @@ function initMyProjectsTab() {
         b.style.borderBottom = active ? '2px solid var(--a1)' : '2px solid transparent';
       });
 
-      const tsPanel    = document.getElementById('empTabTimesheet');
-      const projPanel  = document.getElementById('empTabProjects');
-      const attPanel   = document.getElementById('empTabAttendance');
-      if (tsPanel)   tsPanel.style.display   = tab === 'timesheet'   ? '' : 'none';
-      if (projPanel) projPanel.style.display = tab === 'projects'    ? '' : 'none';
-      if (attPanel)  attPanel.style.display  = tab === 'attendance'  ? '' : 'none';
+      Object.entries(PANEL_BY_TAB).forEach(([key, id]) => {
+        const el = document.getElementById(id);
+        if (el) el.style.display = key === tab ? '' : 'none';
+      });
 
       if (tab === 'projects')    loadMyProjectsTab();
       if (tab === 'attendance')  loadMyAttendanceTab();
+      if (tab === 'newproject')  renderNewProjectForm(document.getElementById('newProjFormContainer'));
     });
   });
+}
+
+// ══════════════════════════════════════════════════════════════
+// NEW PROJECT TAB — 4th tab on the employee's own portal.
+//
+// Any logged-in employee can create a brand-new project (Name +
+// optional Client + Start Date) through the SAME 'saveProjectMaster'
+// backend action the Manager/Team Leader "+ New Project" form already
+// uses — no new endpoint, no parallel save path. role:'employee' is
+// create-only server-side (Code.gs rejects an edit/delete attempt
+// from that role), and startedBy carries the logged-in employee's
+// name so the Clients-Projects sheet's "Started By" column is filled
+// in correctly. Financial fields (Project Constant) aren't part of
+// this form at all — same boundary the Manager-only form already
+// enforces, just enforced here by never asking for it.
+//
+// The tab button/panel are created in ensureNewProjectTab() above
+// rather than living in index.html, since this file doesn't have
+// access to that markup — if index.html is later updated to include
+// a real "New Project" button/panel by hand (same ids), this
+// function's early-return makes that a no-op collision, not a
+// duplicate tab.
+// ══════════════════════════════════════════════════════════════
+
+function ensureNewProjectTab(tabsBar) {
+  if (document.getElementById('empNewProjectBtn')) return; // already present — nothing to add
+
+  const sampleBtn = tabsBar.querySelector('.emp-tab-btn');
+  const btn = document.createElement('button');
+  btn.id = 'empNewProjectBtn';
+  btn.className = sampleBtn ? sampleBtn.className : '';
+  btn.dataset.empTab = 'newproject';
+  btn.textContent = '➕ New Project';
+  tabsBar.appendChild(btn);
+
+  // Panel goes in as a sibling of the existing three, so it inherits
+  // whatever layout/spacing container they already share.
+  const anchor = document.getElementById('empTabAttendance')
+    || document.getElementById('empTabProjects')
+    || document.getElementById('empTabTimesheet');
+  const panel = document.createElement('div');
+  panel.id = 'empTabNewProject';
+  panel.style.display = 'none';
+  panel.innerHTML = '<div id="newProjFormContainer"></div>';
+  if (anchor && anchor.parentNode) anchor.parentNode.insertBefore(panel, anchor.nextSibling);
+  else document.body.appendChild(panel); // fallback — shouldn't happen once index.html has the usual tab panels
+}
+
+async function renderNewProjectForm(container) {
+  if (!container) return;
+  container.innerHTML = `<div class="slot-loading"><div class="slot-spinner"></div><span>Loading…</span></div>`;
+
+  let suggestedId = '';
+  try { suggestedId = (await sheetGET({ action: 'getNextProjectId' })) || ''; }
+  catch (e) { /* fine — the employee can just type an ID manually */ }
+
+  const clientOptions = (CLIENTS || [])
+    .slice()
+    .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+    .map(c => `<option value="${esc(c.id)}">${esc(c.name)}</option>`)
+    .join('');
+
+  container.innerHTML = `
+    <div style="background:var(--surface1);border:1px solid var(--border);border-radius:12px;
+      padding:1.2rem 1.3rem;max-width:520px;margin:0 auto;">
+      <div style="font-weight:700;font-size:16px;color:var(--txt1);margin-bottom:.2rem;">📁 Start a New Project</div>
+      <div style="font-size:11.5px;color:var(--txt2);margin-bottom:1.1rem;">
+        Client is optional — leave it blank if this project doesn't have one yet.
+      </div>
+
+      <div style="margin-bottom:.9rem;">
+        <label style="display:block;font-size:11px;font-weight:700;color:var(--txt2);margin-bottom:5px;">Project Name</label>
+        <input id="npName" style="width:100%;box-sizing:border-box;background:var(--surface2);border:1px solid var(--border);
+          border-radius:7px;color:var(--txt1);font-size:12.5px;padding:8px 10px;font-family:inherit;"
+          placeholder="e.g. SPR Tower F&amp;G Floorplan"/>
+      </div>
+
+      <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:.9rem;">
+        <div style="flex:1 1 180px;">
+          <label style="display:block;font-size:11px;font-weight:700;color:var(--txt2);margin-bottom:5px;">
+            Project ID <span style="font-weight:400;color:var(--muted);">— suggested, editable</span>
+          </label>
+          <input id="npId" value="${esc(suggestedId)}" style="width:100%;box-sizing:border-box;background:var(--surface2);
+            border:1px solid var(--border);border-radius:7px;color:var(--txt1);font-size:12.5px;padding:8px 10px;font-family:inherit;"
+            placeholder="e.g. CPZ-1074"/>
+        </div>
+        <div style="flex:1 1 180px;">
+          <label style="display:block;font-size:11px;font-weight:700;color:var(--txt2);margin-bottom:5px;">
+            Client <span style="font-weight:400;color:var(--muted);">— optional</span>
+          </label>
+          <select id="npClient" style="width:100%;box-sizing:border-box;background:var(--surface2);border:1px solid var(--border);
+            border-radius:7px;color:var(--txt1);font-size:12.5px;padding:8px 10px;font-family:inherit;">
+            <option value="">— No client —</option>
+            ${clientOptions}
+          </select>
+        </div>
+      </div>
+
+      <div style="margin-bottom:1.1rem;">
+        <label style="display:block;font-size:11px;font-weight:700;color:var(--txt2);margin-bottom:5px;">Start Date</label>
+        <input id="npStartDate" type="date" value="${esc(todayStr())}" style="width:100%;max-width:200px;box-sizing:border-box;
+          background:var(--surface2);border:1px solid var(--border);border-radius:7px;color:var(--txt1);font-size:12.5px;
+          padding:8px 10px;font-family:inherit;"/>
+      </div>
+
+      <div style="display:flex;justify-content:flex-end;">
+        <button id="npSaveBtn" style="background:var(--a1);color:#fff;border:none;border-radius:8px;padding:9px 20px;
+          font-size:12.5px;font-weight:700;cursor:pointer;">Create Project</button>
+      </div>
+    </div>`;
+
+  document.getElementById('npSaveBtn').addEventListener('click', () => submitNewProject(container));
+}
+
+async function submitNewProject(container) {
+  if (NEWPROJ_SUBMITTING) return;
+
+  const nameEl = document.getElementById('npName');
+  const idEl   = document.getElementById('npId');
+  const name   = nameEl?.value.trim() || '';
+  const id     = idEl?.value.trim()   || '';
+
+  nameEl?.classList.remove('bad'); idEl?.classList.remove('bad');
+  if (!name) { toast('e', 'Project Name is required'); nameEl?.classList.add('bad'); return; }
+  if (!id)   { toast('e', 'Project ID is required');   idEl?.classList.add('bad');   return; }
+
+  const clientId  = document.getElementById('npClient')?.value || '';
+  const startDate = document.getElementById('npStartDate')?.value || '';
+
+  const btn = document.getElementById('npSaveBtn');
+  NEWPROJ_SUBMITTING = true;
+  if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+
+  try {
+    await sheetGET({
+      action: 'saveProjectMaster',
+      data: encodeURIComponent(JSON.stringify({
+        role:        'employee',
+        projectId:   id,
+        projectName: name,
+        clientId,
+        startDate,
+        startedBy:   USER.name,
+      })),
+    });
+    toast('s', 'Project created', name);
+    // Projects are part of the cached master data — clear it so
+    // Timesheet's client/project pickers and My Projects both see
+    // this new project without needing a hard refresh.
+    if (typeof clearMasterDataCache === 'function') clearMasterDataCache();
+    MYPROJ_MASTER_CACHE = null; // this tab's own project-list cache, likewise stale now
+    renderNewProjectForm(container); // fresh blank form, freshly suggested ID, for the next one
+  } catch (err) {
+    toast('e', 'Save failed', err.message);
+    if (btn) { btn.disabled = false; btn.textContent = 'Create Project'; }
+  } finally {
+    NEWPROJ_SUBMITTING = false;
+  }
 }
 
 async function loadMyProjectsTab() {

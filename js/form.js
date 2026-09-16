@@ -51,17 +51,22 @@ function initForm() {
 
 // ── DATE NAVIGATION ───────────────────────────────
 // Maximum days back from today that can be logged/edited.
-// 0 = today, 1 = yesterday, 2 = day before yesterday.
-// Was a fixed constant — now per-employee: defaults to 2, but HR can
-// grant an individual employee a longer window (e.g. 10 days) from
-// the Manage Employees tab, to let them catch up on a backlog of
-// missed entries without opening it up for everyone. Read from
-// USER.extendedDaysBack (set at login from the Employees sheet) —
-// falls back to the same default of 2 if unset/not a valid number.
+// 0 = today, 1 = yesterday, 2 = day before yesterday, ... 20 = 20 days ago.
+// Default raised from 2 → 20 calendar days for every employee (Sep 2026
+// change). HR can still grant an individual employee an EXTENDED window
+// beyond that (e.g. 30 days) from the Manage Employees tab, to let them
+// catch up on an even older backlog without opening it up for everyone —
+// read from USER.extendedDaysBack (set at login from the Employees sheet).
+// That per-employee value is only ever allowed to extend the window
+// further than the 20-day baseline, never shrink it below — so an old
+// override left over from before this change (e.g. a value of 10, back
+// when the baseline was 2) can no longer end up narrower than what every
+// employee gets by default now.
+const DEFAULT_MAX_DAYS_BACK = 20;
 function getMaxDaysBack() {
   const raw = typeof USER !== 'undefined' && USER ? USER.extendedDaysBack : null;
   const n = parseInt(raw, 10);
-  return Number.isFinite(n) && n > 0 ? n : 2;
+  return Number.isFinite(n) && n > DEFAULT_MAX_DAYS_BACK ? n : DEFAULT_MAX_DAYS_BACK;
 }
 
 function renderDateNav() {
@@ -270,11 +275,15 @@ function renderEntryRow(slotKey, entryNum, entry) {
 
   const id = `${slotKey}-${entryNum}`;
 
-  const projectOptions = clientId
-    ? PROJECTS.filter(p => p.cid === clientId).map(p =>
-        `<option value="${p.id}" data-n="${p.name}"${p.id === projectId ? ' selected' : ''}>${p.id}</option>`
-      ).join('')
-    : '';
+  // Client is optional — a project can have no client at all (see
+  // Client-Project.js's optional-client change), so the Project list
+  // is no longer gated behind picking a client first. Matching on
+  // (p.cid || '') === (clientId || '') means: a real client shows
+  // that client's projects, and leaving Client blank shows exactly
+  // the clientless ones — never every project in the company.
+  const projectOptions = PROJECTS.filter(p => (p.cid || '') === (clientId || '')).map(p =>
+    `<option value="${p.id}" data-n="${p.name}"${p.id === projectId ? ' selected' : ''}>${p.id}</option>`
+  ).join('');
 
   const subtaskId = entry?.subtaskId || '';
   const subtaskOptions = projectId
@@ -332,7 +341,7 @@ function renderEntryRow(slotKey, entryNum, entry) {
     <!-- Client / Project / Task -->
     <div class="frow">
       <div class="fg">
-        <label class="flabel">Client <span class="req">*</span></label>
+        <label class="flabel">Client <span style="color:var(--txt2);font-weight:400;">(optional)</span></label>
         <div class="swrap">
           <select class="fc client-sel" id="csel-${id}" onchange="onClientChange('${id}')">
             <option value="">— Client —</option>
@@ -347,8 +356,8 @@ function renderEntryRow(slotKey, entryNum, entry) {
       <div class="fg">
         <label class="flabel">Project <span class="req">*</span></label>
         <div class="swrap">
-          <select class="fc project-sel" id="psel-${id}" ${clientId ? '' : 'disabled'} onchange="onProjectChange('${id}')">
-            <option value="">— ${clientId ? 'Project' : 'Select client first'} —</option>
+          <select class="fc project-sel" id="psel-${id}" onchange="onProjectChange('${id}')">
+            <option value="">— Project —</option>
             ${projectOptions}
           </select>
           <svg class="sarr" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
@@ -482,6 +491,9 @@ function removeEntry(slotKey, entryNum) {
 }
 
 // ── CLIENT → PROJECT CASCADE ──────────────────────
+// Client is optional (see the projectOptions comment in
+// renderEntryRow) — '' is a valid, deliberate value here, not just
+// "nothing chosen yet", so Project is never locked/disabled on it.
 function onClientChange(id) {
   const csel = $(`csel-${id}`);
   const psel = $(`psel-${id}`);
@@ -495,16 +507,11 @@ function onClientChange(id) {
   }
 
   psel.innerHTML = '<option value="">— Project —</option>';
-  if (cid) {
-    PROJECTS.filter(p => p.cid === cid).forEach(p => {
-      const o = document.createElement('option');
-      o.value = p.id; o.textContent = p.id; o.dataset.n = p.name;
-      psel.appendChild(o);
-    });
-    psel.disabled = false;
-  } else {
-    psel.disabled = true;
-  }
+  PROJECTS.filter(p => (p.cid || '') === cid).forEach(p => {
+    const o = document.createElement('option');
+    o.value = p.id; o.textContent = p.id; o.dataset.n = p.name;
+    psel.appendChild(o);
+  });
   // Changing client invalidates whatever project/subtask was picked —
   // clear the subtask dropdown too so it can't silently keep a stale
   // subtask that belongs to the old project.
@@ -717,7 +724,6 @@ async function saveEntry(id, slotKey, entryNum) {
   const tin  = $(`tin-${id}`);
   const tout = $(`tout-${id}`);
 
-  if (!csel?.value) { toast('e', 'Select a client');  csel?.classList.add('bad'); return; }
   if (!psel?.value) { toast('e', 'Select a project'); psel?.classList.add('bad'); return; }
   if (!tsel?.value) { toast('e', 'Select a task');    tsel?.classList.add('bad'); return; }
   if (!tin?.value)  { toast('e', 'Enter time in');  return; }
@@ -828,7 +834,10 @@ function buildEntry(id, slotKey, entryNum, status) {
     timeOut:   tout,
     hours,
     clientId:  csel?.value || '',
-    client:    cOpt?.dataset?.n || cOpt?.text || '',
+    // Client is optional — when none is picked, csel.value is '' and
+    // cOpt is just the placeholder option, so don't fall through to
+    // cOpt.text (which would otherwise store "— Client —" as the name).
+    client:    csel?.value ? (cOpt?.dataset?.n || cOpt?.text || '') : '',
     projectId: psel?.value || '',
     project:   pOpt?.dataset?.n || pOpt?.text || '',
     subtaskId: ssel?.value || '',
